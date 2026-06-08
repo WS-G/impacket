@@ -17,12 +17,15 @@ indicators that are baked into the compiled blob.
 |---|---|---|
 | Service name `RemComSvc` | embedded `REMCOMSVC` blob (`impacket/examples/remcomsvc.py`) + `-service-name` default `''` (random) | partly — `-service-name` renames the *installed* service, but the name inside the compiled binary is unchanged |
 | Comms pipe `\RemCom_communicaton` *(sic — original RemCom typo)* | embedded `REMCOMSVC` blob | no — compiled in |
-| I/O pipes `RemCom_stdout` / `RemCom_stdin` / `RemCom_stderr` | `examples/psexec.py` (client) **and** the compiled binary (server) | no — both sides must match; changing one alone breaks execution |
+| Comms/I/O pipe names on the **client** side | `examples/psexec.py` constants `RemComCOMM` / `RemComSTDOUT` / `RemComSTDIN` / `RemComSTDERR` | **yes** — now env-overridable via `IMPACKET_REMCOM_PIPE` / `_STDOUT` / `_STDIN` / `_STDERR`, defaulting to the stock names |
+| Comms/I/O pipe names on the **server** side | compiled into the service binary | only by rebuilding — both sides must match, so override the client constants to suit (see Path B) |
 | Dropped binary name | `-remote-binary-name` (default randomised) | yes |
 
 `RemComSTDOUT/STDIN/STDERR` and the service/pipe names are exactly what host- and
 network-based rules key on. Renaming the service alone (`-service-name`) leaves the
 pipe names and the in-binary strings intact, so it is **not** sufficient on its own.
+The client pipe names are now configurable (see below); the names baked into the
+service binary still require a rebuild, and the two **must** match.
 
 ## Path A — runtime flags (no rebuild)
 
@@ -42,9 +45,13 @@ Good for cheap wins; leaves `\RemCom_communicaton` and `RemCom_std*` on the wire
 ## Path B — custom service binary via `-file` (full removal)
 
 `psexec.py -file <binary>` swaps the embedded `RemComSvc` for a binary you supply,
-bypassing the blob entirely. To fully remove the IOCs you must rebuild RemCom with
-renamed pipes/service **and** patch the matching client constants in `psexec.py`,
+bypassing the blob entirely. To fully remove the IOCs you pair a rebuilt RemCom
+(renamed pipes/service) with the matching `IMPACKET_REMCOM_*` client overrides,
 because the two sides negotiate over those exact pipe names.
+
+A ready-made renamed binary ships in this repo:
+**`tools/remcom-lowdetect/RemComSvc-lowdetect.exe`** (see its README for the exact
+name-set and build provenance). Use it directly, or rebuild your own per below.
 
 ### 1. Rebuild RemComSvc with renamed pipes/service (Windows + MSVC)
 
@@ -52,22 +59,27 @@ because the two sides negotiate over those exact pipe names.
 git clone https://github.com/kavika13/RemCom
 ```
 
-In the RemCom source, replace every occurrence of the indicator strings with your
-own (keep lengths sane, pick plausible names). At minimum:
+Every indicator string lives in **`RemCom.h`**; rename the values there (keep
+lengths sane, pick plausible names). At minimum:
 
 - `RemCom_communicaton`  → e.g. `MsUpdate_ctl`
 - `RemCom_stdout` / `_stdin` / `_stderr` → e.g. `MsUpdate_out` / `_in` / `_err`
 - service name `RemComSvc` → e.g. `UpdateHealthSvc`
 
-Build the **RemComSvc** project (Release, statically linked — no CRT dependency, as
-the `-file` help note warns). You now have a renamed service exe.
+Build the **RemComSvc** project (`Release|Win32`, static CRT `/MT` — no VC runtime
+dependency, as the `-file` help note warns). You now have a renamed service exe.
+The shipped `RemComSvc-lowdetect.exe` was built exactly this way.
 
-### 2. Patch the client pipe constants to match (`examples/psexec.py`)
+### 2. Point the client pipe constants at your binary — no code edit
 
-```python
-RemComSTDOUT = "MsUpdate_out"
-RemComSTDIN  = "MsUpdate_in"
-RemComSTDERR = "MsUpdate_err"
+`examples/psexec.py` reads the pipe names from env vars (defaults = stock RemCom
+names). Set them to match the names compiled into your binary:
+
+```bash
+export IMPACKET_REMCOM_PIPE=MsUpdate_ctl     # control pipe  (RemComCOMM)
+export IMPACKET_REMCOM_STDOUT=MsUpdate_out
+export IMPACKET_REMCOM_STDIN=MsUpdate_in
+export IMPACKET_REMCOM_STDERR=MsUpdate_err
 ```
 
 These **must** equal the names compiled into your binary or the client will hang on
@@ -76,7 +88,7 @@ These **must** equal the names compiled into your binary or the client will hang
 ### 3. Run with your binary
 
 ```bash
-psexec.py -file UpdateHealthSvc.exe \
+psexec.py -file tools/remcom-lowdetect/RemComSvc-lowdetect.exe \
           -service-name UpdateHealthSvc \
           -remote-binary-name uhsvc.exe \
           DOMAIN/user@host
@@ -93,12 +105,15 @@ print("".join(f"\\x{b:02x}" for b in data))   # or build the b'...' lines
 ```
 
 Re-embedding bakes your renamed binary in as the new default; still requires the
-client-constant patch in step 2.
+client-side env overrides from step 2. This repo intentionally leaves the embedded
+blob stock so default behaviour is unchanged — the renamed binary is opt-in via
+`-file`.
 
 ## Verification
 
 - Static (no target): `psexec.py -h` parses; `-file`/`-service-name`/`-remote-binary-name`
-  accepted; client pipe constants match the rebuilt binary.
+  accepted; `IMPACKET_REMCOM_*` overrides feed `RemComCOMM/STDOUT/STDIN/STDERR` and
+  match the rebuilt binary's compiled-in names.
 - Runtime: execute against a lab host and confirm with Sysmon (pipe-create / service-install
   events) that no `RemCom*` strings appear, plus a network capture of the pipe traffic.
   Needs a Windows target — out of scope for static review.
