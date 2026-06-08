@@ -47,6 +47,15 @@ from impacket.krb5.keytab import Keytab
 OUTPUT_FILENAME = '__' + str(time.time())
 CODEC = sys.stdout.encoding
 
+# Command-line templates used to launch the remote command. These default strings
+# (the cmd.exe /Q /c and powershell flag set) are strong static IOCs; override them
+# at runtime via env vars to break that signature without touching code.
+#   IMPACKET_SHELL_CMD  - replaces the cmd.exe launcher (default: 'cmd.exe /Q /c ')
+#   IMPACKET_SHELL_PWSH - replaces the powershell launcher
+SHELL_CMD  = os.environ.get('IMPACKET_SHELL_CMD', 'cmd.exe /Q /c ')
+SHELL_PWSH = os.environ.get('IMPACKET_SHELL_PWSH',
+                            'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc ')
+
 
 class WMIEXEC:
     def __init__(self, command='', username='', password='', domain='', hashes=None, aesKey=None, share=None,
@@ -126,9 +135,9 @@ class RemoteShell(cmd.Cmd):
         self.__share = share
         self.__output = '\\' + OUTPUT_FILENAME
         self.__outputBuffer = str('')
-        self.__shell = 'cmd.exe /Q /c '
+        self.__shell = SHELL_CMD
         self.__shell_type = shell_type
-        self.__pwsh = 'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc '
+        self.__pwsh = SHELL_PWSH
         self.__win32Process = win32Process
         self.__transferClient = smbConnection
         self.__silentCommand = silentCommand
