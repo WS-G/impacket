@@ -19,21 +19,58 @@
 #   Alberto Solino (@agsolino)
 #
 
+import os
 import random
-import string
 
 from impacket.dcerpc.v5 import transport, srvs, scmr
 from impacket import smb,smb3, LOG
 from impacket.smbconnection import SMBConnection
 from impacket.smb3structs import FILE_WRITE_DATA, FILE_DIRECTORY_FILE
 
+# When no explicit service/binary name is supplied, impacket historically generated
+# a random 4-char service name and an 8-char binary name. A purely random alpha
+# string is itself an IOC (defenders flag the short high-entropy names psexec leaves
+# behind). These pools of plausible-looking names blend in instead. They are chosen
+# to resemble real Windows service infrastructure WITHOUT colliding with actual
+# built-in services (collision would make the create fail).
+#   IMPACKET_SERVICE_NAME       - pin one exact service name
+#   IMPACKET_BINARY_NAME        - pin one exact binary name (.exe appended if missing)
+#   IMPACKET_SERVICE_NAME_POOL  - comma-separated pool to pick from
+#   IMPACKET_BINARY_NAME_POOL   - comma-separated pool to pick from
+_DEFAULT_SERVICE_POOL = ['WinErrReport', 'NetProfMgr', 'TrustedHostSvc', 'WdiServiceHost',
+                         'AppReadinessSvc', 'DiagTrackHelper', 'SysMainHelper', 'UsoSvcHost']
+_DEFAULT_BINARY_POOL  = ['hostsvc', 'wdiwrap', 'netprof', 'trustedhost',
+                         'appready', 'diagtrack', 'sysmainhost', 'usosvc']
+
+
+def _name_pool(env_name, default):
+    raw = os.environ.get(env_name)
+    if raw:
+        chosen = [x.strip() for x in raw.split(',') if x.strip()]
+        if chosen:
+            return chosen
+    return default
+
+
+def _benign_service_name():
+    return os.environ.get('IMPACKET_SERVICE_NAME') or \
+        random.choice(_name_pool('IMPACKET_SERVICE_NAME_POOL', _DEFAULT_SERVICE_POOL))
+
+
+def _benign_binary_name():
+    name = os.environ.get('IMPACKET_BINARY_NAME')
+    if not name:
+        name = random.choice(_name_pool('IMPACKET_BINARY_NAME_POOL', _DEFAULT_BINARY_POOL))
+    return name if name.lower().endswith('.exe') else name + '.exe'
+
+
 class ServiceInstall:
     def __init__(self, SMBObject, exeFile, serviceName='', binary_service_name=None):
         self._rpctransport = 0
-        self.__service_name = serviceName if len(serviceName) > 0  else  ''.join([random.choice(string.ascii_letters) for i in range(4)])
+        self.__service_name = serviceName if len(serviceName) > 0 else _benign_service_name()
 
         if binary_service_name is None:
-            self.__binary_service_name = ''.join([random.choice(string.ascii_letters) for i in range(8)]) + '.exe'
+            self.__binary_service_name = _benign_binary_name()
         else:
             self.__binary_service_name = binary_service_name
             
