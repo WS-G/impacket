@@ -124,9 +124,12 @@ if __name__ == '__main__':
             sys.exit(1)
         server.setComputerAccount(options.computeraccountname, options.computeraccounthash, options.computeraccountaes, options.computeraccountpassword, options.computeraccountdomain, options.dc_ip)
 
-    # Here you can set a custom SMB challenge in hex format
-    # If empty defaults to '4141414141414141'
-    # (remember: must be 16 hex bytes long)
+    # Here you can set a custom SMB challenge in hex format.
+    # If empty, a random per-instance challenge is generated (a real server issues an
+    # unpredictable challenge; the legacy fixed '4141414141414141' is a static IOC).
+    # Set the IMPACKET_SMBSERVER_CHALLENGE env var for a deterministic override, or
+    # pass an explicit value here.
+    # (remember: must be 16 hex chars / 8 bytes long)
     # e.g. server.setSMBChallenge('12345678abcdef00')
     server.setSMBChallenge('')
 

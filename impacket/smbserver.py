@@ -4927,8 +4927,13 @@ class SMBSERVER(socketserver.ThreadingMixIn, socketserver.TCPServer):
         self.__logFile = self.__serverConfig.get('global', 'log_file')
         if self.__serverConfig.has_option('global', 'challenge'):
             self.__challenge = unhexlify(self.__serverConfig.get('global', 'challenge'))
+        elif os.environ.get('IMPACKET_SMBSERVER_CHALLENGE'):
+            self.__challenge = unhexlify(os.environ['IMPACKET_SMBSERVER_CHALLENGE'])
         else:
-            self.__challenge = b'A' * 8
+            # A fixed server challenge (historically b'A' * 8 -> 4141414141414141)
+            # is a well-known static IOC for impacket's SMB server. A real server
+            # issues a fresh, unpredictable challenge, so default to a random one.
+            self.__challenge = os.urandom(8)
 
         if self.__serverConfig.has_option("global", "jtr_dump_path"):
             self.__jtr_dump_path = self.__serverConfig.get("global", "jtr_dump_path")
@@ -5194,7 +5199,12 @@ class SimpleSMBServer:
             self.__smbConfig.set('global', 'log_file', 'None')
             self.__smbConfig.set('global', 'rpc_apis', 'yes')
             self.__smbConfig.set('global', 'credentials_file', '')
-            self.__smbConfig.set('global', 'challenge', "A" * 16)
+            # A fixed challenge ("A" * 16 -> aaaaaaaaaaaaaaaa) is a well-known static
+            # IOC for impacket's SMB server. Default to a random per-instance challenge
+            # (what a real server does); IMPACKET_SMBSERVER_CHALLENGE forces a value.
+            self.__smbConfig.set('global', 'challenge',
+                                 os.environ.get('IMPACKET_SMBSERVER_CHALLENGE',
+                                                hexlify(os.urandom(8)).decode()))
 
             # IPC always needed
             self.__smbConfig.add_section('IPC$')
