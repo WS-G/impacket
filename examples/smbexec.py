@@ -86,6 +86,15 @@ def _benign_service_name():
     pool = [x.strip() for x in raw.split(',') if x.strip()] if raw else _DEFAULT_SERVICE_POOL
     return random.choice(pool or _DEFAULT_SERVICE_POOL)
 
+# Command-line templates used to launch the remote command. The default
+# '%COMSPEC% /Q /c' and powershell flag set are strong static IOCs; override at
+# runtime via env vars to break that signature without touching code.
+#   IMPACKET_SHELL_CMD  - replaces the comspec launcher (default: '%COMSPEC% /Q /c ')
+#   IMPACKET_SHELL_PWSH - replaces the powershell launcher
+SHELL_CMD  = os.environ.get('IMPACKET_SHELL_CMD', '%COMSPEC% /Q /c ')
+SHELL_PWSH = os.environ.get('IMPACKET_SHELL_PWSH',
+                            'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc ')
+
 class SMBServer(Thread):
     def __init__(self):
         Thread.__init__(self)
@@ -205,9 +214,9 @@ class RemoteShell(cmd.Cmd):
         self.__output = '\\\\%COMPUTERNAME%\\' + self.__share + '\\' + OUTPUT_FILENAME
         self.__outputBuffer = b''
         self.__command = ''
-        self.__shell = '%COMSPEC% /Q /c '
+        self.__shell = SHELL_CMD
         self.__shell_type = shell_type
-        self.__pwsh = 'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc '
+        self.__pwsh = SHELL_PWSH
         self.__serviceName = serviceName
         self.__rpc = rpc
         self.intro = '[!] Launching semi-interactive shell - Careful what you execute'

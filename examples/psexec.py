@@ -58,9 +58,21 @@ class RemComResponse(Structure):
         ('ReturnCode','<L=0'),
     )
 
-RemComSTDOUT = "RemCom_stdout"
-RemComSTDIN = "RemCom_stdin"
-RemComSTDERR = "RemCom_stderr"
+# psexec drives RemComSvc over named pipes whose names are static, signatured
+# IOCs: the \RemCom_communicaton control pipe (original RemCom typo included) plus
+# the RemCom_stdout/stdin/stderr I/O pipes. Both client and the service binary must
+# agree on these names, so they are only configurable in tandem. To pair with a
+# rebuilt service binary that renames the pipes (see docs/low-detection-remcom.md),
+# override these to match the names compiled into that binary. Defaults are the
+# stock RemCom names, so behaviour is unchanged unless explicitly overridden.
+#   IMPACKET_REMCOM_PIPE   - control pipe (default: 'RemCom_communicaton')
+#   IMPACKET_REMCOM_STDOUT - stdout pipe  (default: 'RemCom_stdout')
+#   IMPACKET_REMCOM_STDIN  - stdin pipe   (default: 'RemCom_stdin')
+#   IMPACKET_REMCOM_STDERR - stderr pipe  (default: 'RemCom_stderr')
+RemComCOMM = os.environ.get('IMPACKET_REMCOM_PIPE', 'RemCom_communicaton')
+RemComSTDOUT = os.environ.get('IMPACKET_REMCOM_STDOUT', 'RemCom_stdout')
+RemComSTDIN = os.environ.get('IMPACKET_REMCOM_STDIN', 'RemCom_stdin')
+RemComSTDERR = os.environ.get('IMPACKET_REMCOM_STDERR', 'RemCom_stderr')
 
 lock = Lock()
 
@@ -162,7 +174,7 @@ class PSEXEC:
                 self.__command = os.path.basename(self.__copyFile) + ' ' + self.__command
 
             tid = s.connectTree('IPC$')
-            fid_main = self.openPipe(s,tid,r'\RemCom_communicaton',0x12019f)
+            fid_main = self.openPipe(s,tid,r'\%s' % RemComCOMM,0x12019f)
 
             packet = RemComMessage()
             pid = os.getpid()
